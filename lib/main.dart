@@ -13,6 +13,11 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SafeLink',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        fontFamily: 'Regular',
+        scaffoldBackgroundColor: Colors.white,
+      ),
       home: const SplashScreen(),
     );
   }
