@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:safelink/screens/auth/signup_screen.dart';
+import 'package:safelink/screens/dashboard/dashboard_screen.dart';
 import 'package:safelink/utils/colors.dart';
 import 'package:safelink/widgets/button_widget.dart';
 import 'package:safelink/widgets/text_widget.dart';
@@ -38,7 +39,13 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = false;
       });
 
-      // TODO: Navigate to dashboard after successful login
+      // Navigate to dashboard after successful login
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const DashboardScreen()),
+        );
+      }
     }
   }
 
