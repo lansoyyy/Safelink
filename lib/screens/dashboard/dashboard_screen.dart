@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:safelink/screens/auth/login_screen.dart';
 import 'package:safelink/screens/dashboard/about_screen.dart';
 import 'package:safelink/screens/dashboard/emergency_contacts_screen.dart';
 import 'package:safelink/screens/dashboard/history_screen.dart';
+import 'package:safelink/screens/dashboard/map_view_screen.dart';
 import 'package:safelink/screens/dashboard/notifications_screen.dart';
 import 'package:safelink/screens/dashboard/settings_screen.dart';
 import 'package:safelink/utils/colors.dart';
@@ -21,10 +23,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _lastAlertTime = 'No alerts yet';
   String _lastAlertLocation = 'N/A';
 
+  // Simulation toggle
+  bool _simulationMode = false;
+
   // Simulate checking for incoming alerts
   void _checkForAlerts() {
     // TODO: Implement Firebase Cloud Messaging listener
     // This will be replaced with actual FCM implementation
+  }
+
+  void _toggleSimulation(bool value) {
+    setState(() {
+      _simulationMode = value;
+      if (_simulationMode) {
+        // Simulate an emergency alert
+        _hasIncomingAlert = true;
+        _alertType = 'emergency';
+        _lastAlertTime = DateTime.now().toString().substring(0, 19);
+        _lastAlertLocation = 'Block A, Street 5, Alsea Homes';
+      } else {
+        // Clear alerts
+        _hasIncomingAlert = false;
+        _alertType = 'none';
+        _lastAlertTime = 'No alerts yet';
+        _lastAlertLocation = 'N/A';
+      }
+    });
   }
 
   @override
@@ -69,9 +93,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _viewMapLocation() {
-    // TODO: Navigate to map view with location
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Opening map view...')),
+    // Navigate to map view with single alert location
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MapViewScreen(
+          isSinglePin: true,
+          alertData: {
+            'type': _alertType,
+            'location': _lastAlertLocation,
+            'coordinates': const LatLng(14.5995, 120.9842),
+            'time': _lastAlertTime,
+            'description': _alertType == 'emergency'
+                ? 'Emergency alert detected'
+                : 'Warning alert detected',
+          },
+        ),
+      ),
     );
   }
 
@@ -209,6 +247,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 // Welcome Section
                 _buildWelcomeSection(),
+                const SizedBox(height: 20),
+
+                // Simulation Toggle
+                _buildSimulationToggle(),
                 const SizedBox(height: 20),
 
                 // Alert Status Card
@@ -413,6 +455,73 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _buildSimulationToggle() {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: _simulationMode ? primary : Colors.grey.withOpacity(0.3),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: _simulationMode
+                  ? primary.withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.science_outlined,
+              color: _simulationMode ? primary : Colors.grey[600],
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextWidget(
+                  text: 'Simulation Mode',
+                  fontSize: 16,
+                  fontFamily: 'Bold',
+                  color: Colors.black,
+                ),
+                const SizedBox(height: 3),
+                TextWidget(
+                  text: _simulationMode
+                      ? 'Active Alert Simulation ON'
+                      : 'No Alerts Simulation',
+                  fontSize: 13,
+                  fontFamily: 'Regular',
+                  color: _simulationMode ? primary : Colors.grey[600],
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: _simulationMode,
+            activeColor: primary,
+            onChanged: _toggleSimulation,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAlertStatusCard() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -480,8 +589,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _viewMapLocation,
-                    icon: const Icon(Icons.map),
-                    label: const Text('View Location'),
+                    icon: const Icon(
+                      Icons.map,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'View Location',
+                      style: TextStyle(fontSize: 12),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primary,
                       foregroundColor: Colors.white,
@@ -492,8 +607,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _acknowledgeAlert,
-                    icon: const Icon(Icons.check),
-                    label: const Text('Clear Alert'),
+                    icon: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'Clear Alert',
+                      style: TextStyle(fontSize: 12),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
@@ -535,7 +656,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           title: 'Map View',
           subtitle: 'Location tracking',
           color: Colors.green,
-          onTap: _viewMapLocation,
+          onTap: () {
+            // Navigate to map view with multiple pins
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const MapViewScreen(
+                  isSinglePin: false,
+                ),
+              ),
+            );
+          },
         ),
         _buildQuickActionCard(
           icon: Icons.settings,
