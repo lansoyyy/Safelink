@@ -66,29 +66,172 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleForgotPassword() async {
-    if (_emailController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter your email address'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    final result = await _authService.resetPassword(
-      email: _emailController.text.trim(),
+    final emailController = TextEditingController(
+      text: _emailController.text.trim(),
     );
+    final formKey = GlobalKey<FormState>();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['message']),
-          backgroundColor: result['success'] ? Colors.green : Colors.red,
-          duration: const Duration(seconds: 3),
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
         ),
-      );
-    }
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.lock_reset,
+                        color: primary,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextWidget(
+                            text: 'Forgot Password?',
+                            fontSize: 20,
+                            fontFamily: 'Bold',
+                            color: Colors.black,
+                          ),
+                          const SizedBox(height: 3),
+                          TextWidget(
+                            text: 'Reset your password',
+                            fontSize: 13,
+                            fontFamily: 'Regular',
+                            color: Colors.grey[600],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                TextWidget(
+                  text:
+                      'Enter your email address and we\'ll send you a link to reset your password.',
+                  fontSize: 14,
+                  fontFamily: 'Regular',
+                  color: Colors.grey[700],
+                  maxLines: 5,
+                ),
+                const SizedBox(height: 20),
+                TextFieldWidget(
+                  label: 'Email Address',
+                  hint: 'Enter your email',
+                  controller: emailController,
+                  inputType: TextInputType.emailAddress,
+                  borderColor: primary,
+                  prefix: const Icon(Icons.email_outlined, size: 20),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your email';
+                    }
+                    if (!value.contains('@')) {
+                      return 'Please enter a valid email';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        emailController.dispose();
+                        Navigator.pop(context);
+                      },
+                      child: TextWidget(
+                        text: 'Cancel',
+                        fontSize: 14,
+                        fontFamily: 'Medium',
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () async {
+                        if (formKey.currentState!.validate()) {
+                          // Close dialog
+                          Navigator.pop(context);
+
+                          // Show loading
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (context) => const Center(
+                              child: CircularProgressIndicator(
+                                color: primary,
+                              ),
+                            ),
+                          );
+
+                          // Send reset email
+                          final result = await _authService.resetPassword(
+                            email: emailController.text.trim(),
+                          );
+
+                          // Close loading
+                          if (mounted) Navigator.pop(context);
+
+                          // Show result
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(result['message']),
+                                backgroundColor:
+                                    result['success'] ? Colors.green : Colors.red,
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                          }
+
+                          emailController.dispose();
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: TextWidget(
+                        text: 'Send Reset Link',
+                        fontSize: 14,
+                        fontFamily: 'Bold',
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
