@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:safelink/screens/auth/signup_screen.dart';
 import 'package:safelink/screens/dashboard/dashboard_screen.dart';
+import 'package:safelink/services/auth_service.dart';
 import 'package:safelink/utils/colors.dart';
 import 'package:safelink/widgets/button_widget.dart';
 import 'package:safelink/widgets/text_widget.dart';
@@ -17,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _authService = AuthService();
   bool _isLoading = false;
 
   @override
@@ -32,20 +34,60 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = true;
       });
 
-      // TODO: Implement Firebase authentication
-      await Future.delayed(const Duration(seconds: 2));
+      // Sign in with Firebase
+      final result = await _authService.signIn(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
 
       setState(() {
         _isLoading = false;
       });
 
-      // Navigate to dashboard after successful login
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const DashboardScreen()),
-        );
+        if (result['success']) {
+          // Navigate to dashboard after successful login
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const DashboardScreen()),
+          );
+        } else {
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message']),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
+    }
+  }
+
+  Future<void> _handleForgotPassword() async {
+    if (_emailController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your email address'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final result = await _authService.resetPassword(
+      email: _emailController.text.trim(),
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']),
+          backgroundColor: result['success'] ? Colors.green : Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
   }
 
@@ -150,9 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                      onPressed: () {
-                        // TODO: Implement forgot password
-                      },
+                      onPressed: _handleForgotPassword,
                       child: TextWidget(
                         text: 'Forgot Password?',
                         fontSize: 14,

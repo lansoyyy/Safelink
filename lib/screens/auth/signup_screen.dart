@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:safelink/screens/dashboard/dashboard_screen.dart';
+import 'package:safelink/services/auth_service.dart';
 import 'package:safelink/utils/colors.dart';
 import 'package:safelink/widgets/button_widget.dart';
 import 'package:safelink/widgets/text_widget.dart';
@@ -18,6 +20,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _authService = AuthService();
   bool _isLoading = false;
 
   @override
@@ -36,14 +39,49 @@ class _SignUpScreenState extends State<SignUpScreen> {
         _isLoading = true;
       });
 
-      // TODO: Implement Firebase authentication
-      await Future.delayed(const Duration(seconds: 2));
+      // Sign up with Firebase
+      final result = await _authService.signUp(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        fullName: _nameController.text.trim(),
+        phoneNumber: _phoneController.text.trim(),
+      );
 
       setState(() {
         _isLoading = false;
       });
 
-      // TODO: Navigate to dashboard or show success message
+      if (mounted) {
+        if (result['success']) {
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message']),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+
+          // Navigate to dashboard after successful signup
+          await Future.delayed(const Duration(seconds: 1));
+          if (mounted) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const DashboardScreen()),
+              (route) => false,
+            );
+          }
+        } else {
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message']),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
     }
   }
 

@@ -1,5 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:safelink/screens/auth/login_screen.dart';
+import 'package:safelink/screens/dashboard/dashboard_screen.dart';
+import 'package:safelink/services/auth_service.dart';
 import 'package:safelink/utils/colors.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -14,6 +17,7 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
+  final _authService = AuthService();
 
   @override
   void initState() {
@@ -40,14 +44,30 @@ class _SplashScreenState extends State<SplashScreen>
 
     _animationController.forward();
 
-    // Navigate to login screen after 3 seconds
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-        );
-      }
-    });
+    // Check authentication status and navigate accordingly
+    _checkAuthStatus();
+  }
+
+  Future<void> _checkAuthStatus() async {
+    await Future.delayed(const Duration(seconds: 3));
+
+    if (!mounted) return;
+
+    // Check if user is already logged in
+    final User? currentUser = _authService.currentUser;
+    final bool isLoggedIn = await _authService.isLoggedIn();
+
+    if (currentUser != null && isLoggedIn) {
+      // User is logged in, navigate to dashboard
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const DashboardScreen()),
+      );
+    } else {
+      // User is not logged in, navigate to login screen
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
   }
 
   @override

@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:safelink/services/auth_service.dart';
 import 'package:safelink/utils/colors.dart';
 import 'package:safelink/widgets/button_widget.dart';
 import 'package:safelink/widgets/text_widget.dart';
@@ -12,16 +14,50 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final _authService = AuthService();
+  
   // Alert Preferences
   bool _notificationsEnabled = true;
   bool _soundEnabled = true;
   bool _vibrationEnabled = true;
   bool _emergencyAlertsOnly = false;
-
+  
   // Profile data
   String _userName = 'HOA Officer';
   String _userEmail = 'officer@safelink.com';
   String _userPhone = '+1 (555) 123-4567';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final User? user = _authService.currentUser;
+    if (user != null) {
+      final userData = await _authService.getUserData(user.uid);
+      if (userData != null && mounted) {
+        setState(() {
+          _userName = userData['fullName'] ?? 'HOA Officer';
+          _userEmail = userData['email'] ?? user.email ?? '';
+          _userPhone = userData['phoneNumber'] ?? '';
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _userName = user.displayName ?? 'HOA Officer';
+          _userEmail = user.email ?? '';
+          _isLoading = false;
+        });
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   void _showUpdateProfileDialog() {
     final nameController = TextEditingController(text: _userName);
@@ -117,20 +153,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(width: 10),
                       ButtonWidget(
                         label: 'Save',
-                        onPressed: () {
+                        onPressed: () async {
                           if (formKey.currentState!.validate()) {
-                            setState(() {
-                              _userName = nameController.text;
-                              _userEmail = emailController.text;
-                              _userPhone = phoneController.text;
-                            });
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Profile updated successfully'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
+                            final User? user = _authService.currentUser;
+                            if (user != null) {
+                              final success = await _authService.updateUserProfile(
+                                uid: user.uid,
+                                fullName: nameController.text.trim(),
+                                phoneNumber: phoneController.text.trim(),
+                              );
+
+                              if (success) {
+                                setState(() {
+                                  _userName = nameController.text.trim();
+                                  _userPhone = phoneController.text.trim();
+                                });
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Profile updated successfully'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              } else {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Failed to update profile'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
                           }
                         },
                         width: 120,
@@ -249,14 +303,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(width: 10),
                       ButtonWidget(
                         label: 'Change',
-                        onPressed: () {
+                        onPressed: () async {
                           if (formKey.currentState!.validate()) {
-                            // TODO: Implement password change with Firebase Auth
+                            final result = await _authService.changePassword(
+                              currentPassword: currentPasswordController.text,
+                              newPassword: newPasswordController.text,
+                            );
+
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Password changed successfully'),
-                                backgroundColor: Colors.green,
+                              SnackBar(
+                                content: Text(result['message']),
+                                backgroundColor:
+                                    result['success'] ? Colors.green : Colors.red,
                               ),
                             );
                           }
