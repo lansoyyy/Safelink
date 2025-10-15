@@ -3,6 +3,8 @@ import 'package:safelink/utils/colors.dart';
 import 'package:safelink/widgets/button_widget.dart';
 import 'package:safelink/widgets/text_widget.dart';
 import 'package:safelink/widgets/textfield_widget.dart';
+import 'package:safelink/services/emergency_contacts_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class EmergencyContactsScreen extends StatefulWidget {
   const EmergencyContactsScreen({super.key});
@@ -13,56 +15,84 @@ class EmergencyContactsScreen extends StatefulWidget {
 }
 
 class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
-  // Sample emergency contacts data
-  final List<Map<String, dynamic>> _emergencyContacts = [
-    {
-      'name': 'Police Station',
-      'phone': '911',
-      'relationship': 'Emergency Services',
-      'isPrimary': true,
-    },
-    {
-      'name': 'Fire Department',
-      'phone': '911',
-      'relationship': 'Emergency Services',
-      'isPrimary': true,
-    },
-    {
-      'name': 'Medical Emergency',
-      'phone': '911',
-      'relationship': 'Emergency Services',
-      'isPrimary': true,
-    },
-  ];
+  final EmergencyContactsService _contactsService = EmergencyContactsService();
+  List<Map<String, dynamic>> _emergencyContacts = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEmergencyContacts();
+  }
+
+  void _loadEmergencyContacts() async {
+    try {
+      final contacts = await _contactsService.getEmergencyContacts();
+      setState(() {
+        _emergencyContacts = contacts;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading contacts: $e')),
+      );
+    }
+  }
 
   void _addContact() {
     showDialog(
       context: context,
       builder: (context) => _AddContactDialog(
-        onAdd: (contact) {
-          setState(() {
-            _emergencyContacts.add(contact);
-          });
+        onAdd: (contact) async {
+          try {
+            await _contactsService.addEmergencyContact(contact);
+            _loadEmergencyContacts(); // Refresh the list
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Contact added successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } catch (e) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error adding contact: $e')),
+            );
+          }
         },
       ),
     );
   }
 
-  void _editContact(int index) {
+  void _editContact(Map<String, dynamic> contact) {
     showDialog(
       context: context,
       builder: (context) => _AddContactDialog(
-        contact: _emergencyContacts[index],
-        onAdd: (contact) {
-          setState(() {
-            _emergencyContacts[index] = contact;
-          });
+        contact: contact,
+        onAdd: (updatedContact) async {
+          try {
+            await _contactsService.updateEmergencyContact(
+                contact['id'], updatedContact);
+            _loadEmergencyContacts(); // Refresh the list
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Contact updated successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } catch (e) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error updating contact: $e')),
+            );
+          }
         },
       ),
     );
   }
 
-  void _deleteContact(int index) {
+  void _deleteContact(Map<String, dynamic> contact) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -87,14 +117,23 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
             ),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                _emergencyContacts.removeAt(index);
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Contact deleted')),
-              );
+            onPressed: () async {
+              try {
+                await _contactsService.deleteEmergencyContact(contact['id']);
+                Navigator.pop(context);
+                _loadEmergencyContacts(); // Refresh the list
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Contact deleted'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error deleting contact: $e')),
+                );
+              }
             },
             child: TextWidget(
               text: 'Delete',
@@ -108,11 +147,25 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     );
   }
 
-  void _callContact(String phone) {
-    // TODO: Implement phone call functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Calling $phone...')),
+  void _callContact(String phone) async {
+    final Uri phoneUri = Uri(
+      scheme: 'tel',
+      path: phone,
     );
+
+    try {
+      if (await canLaunchUrl(phoneUri)) {
+        await launchUrl(phoneUri);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not launch phone dialer for $phone')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error making call: $e')),
+      );
+    }
   }
 
   void _notifyAllContacts() {
@@ -149,11 +202,30 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // TODO: Implement notification to all contacts
+              // Call all primary contacts
+              final primaryContacts = _emergencyContacts
+                  .where((contact) => contact['isPrimary'] == true)
+                  .toList();
+
+              if (primaryContacts.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('No primary contacts found'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+
+              // Call the first primary contact
+              _callContact(primaryContacts.first['phone']);
+
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Emergency notification sent to all contacts'),
-                  backgroundColor: Colors.green,
+                SnackBar(
+                  content: Text(
+                      'Emergency alert initiated. Calling ${primaryContacts.first['name']}'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 3),
                 ),
               );
             },
@@ -274,28 +346,19 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
 
           // Contacts List
           Expanded(
-            child: _emergencyContacts.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: _emergencyContacts.length,
-                    itemBuilder: (context, index) {
-                      return _buildContactCard(_emergencyContacts[index], index);
-                    },
-                  ),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _emergencyContacts.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: _emergencyContacts.length,
+                        itemBuilder: (context, index) {
+                          return _buildContactCard(_emergencyContacts[index]);
+                        },
+                      ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addContact,
-        backgroundColor: primary,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: TextWidget(
-          text: 'Add Contact',
-          fontSize: 14,
-          fontFamily: 'Bold',
-          color: Colors.white,
-        ),
       ),
     );
   }
@@ -330,7 +393,7 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     );
   }
 
-  Widget _buildContactCard(Map<String, dynamic> contact, int index) {
+  Widget _buildContactCard(Map<String, dynamic> contact) {
     return Container(
       margin: const EdgeInsets.only(bottom: 15),
       decoration: BoxDecoration(
@@ -356,9 +419,7 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
             shape: BoxShape.circle,
           ),
           child: Icon(
-            contact['isPrimary'] == true
-                ? Icons.emergency_share
-                : Icons.person,
+            contact['isPrimary'] == true ? Icons.emergency_share : Icons.person,
             color: primary,
             size: 25,
           ),
@@ -452,7 +513,7 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
               onTap: () {
                 Future.delayed(
                   const Duration(milliseconds: 100),
-                  () => _editContact(index),
+                  () => _editContact(contact),
                 );
               },
             ),
@@ -473,7 +534,7 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
                 onTap: () {
                   Future.delayed(
                     const Duration(milliseconds: 100),
-                    () => _deleteContact(index),
+                    () => _deleteContact(contact),
                   );
                 },
               ),
@@ -507,8 +568,10 @@ class _AddContactDialogState extends State<_AddContactDialog> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.contact?['name'] ?? '');
-    _phoneController = TextEditingController(text: widget.contact?['phone'] ?? '');
+    _nameController =
+        TextEditingController(text: widget.contact?['name'] ?? '');
+    _phoneController =
+        TextEditingController(text: widget.contact?['phone'] ?? '');
     _relationshipController =
         TextEditingController(text: widget.contact?['relationship'] ?? '');
     _isPrimary = widget.contact?['isPrimary'] ?? false;
