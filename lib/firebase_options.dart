@@ -55,8 +55,9 @@ class DefaultFirebaseOptions {
   static const FirebaseOptions android = FirebaseOptions(
       apiKey: "AIzaSyDsbmUtzQsHuJy9lc1aMVQchA4002Rl9dE",
       authDomain: "safelink-60c18.firebaseapp.com",
+      databaseURL: "https://safelink-60c18-default-rtdb.firebaseio.com",
       projectId: "safelink-60c18",
       storageBucket: "safelink-60c18.firebasestorage.app",
       messagingSenderId: "671178769517",
-      appId: "1:671178769517:web:6107f8c1db911a857eab64");
+      appId: "1:671178769517:web:123917d4acee786c7eab64");
 }

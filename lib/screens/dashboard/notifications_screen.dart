@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:safelink/models/alert_model.dart';
+import 'package:safelink/services/alert_service.dart';
 import 'package:safelink/utils/colors.dart';
 import 'package:safelink/widgets/text_widget.dart';
 
@@ -10,38 +12,44 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  // Sample notifications data
-  final List<Map<String, dynamic>> _notifications = [
-    {
-      'title': 'System Status Update',
-      'message': 'All systems are operational',
-      'time': '2 hours ago',
-      'type': 'info',
-      'isRead': false,
-    },
-    {
-      'title': 'Emergency Alert Resolved',
-      'message': 'Emergency at Block A has been resolved',
-      'time': '1 day ago',
-      'type': 'success',
-      'isRead': true,
-    },
-    {
-      'title': 'Warning Alert',
-      'message': 'Potential incident detected at Block B',
-      'time': '2 days ago',
-      'type': 'warning',
-      'isRead': true,
-    },
-  ];
+  final AlertService _alertService = AlertService();
+  List<AlertModel> _notifications = [];
+  bool _isLoading = true;
 
-  void _markAllAsRead() {
-    setState(() {
-      for (var notification in _notifications) {
-        notification['isRead'] = true;
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+  }
+
+  void _loadNotifications() {
+    _alertService.getAllAlertsStream().listen((alerts) {
+      if (mounted) {
+        setState(() {
+          _notifications = alerts;
+          _isLoading = false;
+        });
       }
     });
   }
+
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} minutes ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours} hours ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago';
+    } else {
+      return '${dateTime.month}/${dateTime.day}/${dateTime.year}';
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -60,23 +68,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           fontFamily: 'Bold',
           color: Colors.white,
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.done_all, color: Colors.white),
-            onPressed: _markAllAsRead,
-            tooltip: 'Mark all as read',
-          ),
-        ],
       ),
-      body: _notifications.isEmpty
-          ? _buildEmptyState()
-          : ListView.builder(
-              padding: const EdgeInsets.all(20),
-              itemCount: _notifications.length,
-              itemBuilder: (context, index) {
-                return _buildNotificationCard(_notifications[index], index);
-              },
-            ),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: primary),
+            )
+          : _notifications.isEmpty
+              ? _buildEmptyState()
+              : ListView.builder(
+                  padding: const EdgeInsets.all(20),
+                  itemCount: _notifications.length,
+                  itemBuilder: (context, index) {
+                    return _buildNotificationCard(_notifications[index], index);
+                  },
+                ),
     );
   }
 
@@ -109,27 +114,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _buildNotificationCard(Map<String, dynamic> notification, int index) {
-    IconData icon;
-    Color iconColor;
-
-    switch (notification['type']) {
-      case 'info':
-        icon = Icons.info_outline;
-        iconColor = Colors.blue;
-        break;
-      case 'success':
-        icon = Icons.check_circle_outline;
-        iconColor = Colors.green;
-        break;
-      case 'warning':
-        icon = Icons.warning_amber;
-        iconColor = Colors.orange;
-        break;
-      default:
-        icon = Icons.notifications;
-        iconColor = Colors.grey;
-    }
+  Widget _buildNotificationCard(AlertModel alert, int index) {
+    final isEmergency = alert.alertType.toLowerCase() == 'emergency';
+    final icon = isEmergency ? Icons.emergency : Icons.warning_amber;
+    final iconColor = isEmergency ? Colors.red : Colors.orange;
+    final title = isEmergency ? 'Emergency Alert' : 'Warning Alert';
+    final statusIcon = alert.isActive ? Icons.warning : Icons.check_circle_outline;
+    final statusColor = alert.isActive ? Colors.orange : Colors.green;
+    final statusText = alert.isActive ? 'Active' : 'Resolved';
 
     return Dismissible(
       key: Key('notification_$index'),
@@ -156,13 +148,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         margin: const EdgeInsets.only(bottom: 15),
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
-          color: notification['isRead'] ? Colors.white : primaryLight,
+          color: alert.isActive ? primaryLight : Colors.white,
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
-            color: notification['isRead']
-                ? Colors.grey.withOpacity(0.2)
-                : primary.withOpacity(0.3),
-            width: notification['isRead'] ? 1 : 2,
+            color: alert.isActive
+                ? primary.withOpacity(0.3)
+                : Colors.grey.withOpacity(0.2),
+            width: alert.isActive ? 2 : 1,
           ),
           boxShadow: [
             BoxShadow(
@@ -192,37 +184,57 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     children: [
                       Expanded(
                         child: TextWidget(
-                          text: notification['title'],
+                          text: title,
                           fontSize: 16,
                           fontFamily: 'Bold',
                           color: Colors.black,
                         ),
                       ),
-                      if (!notification['isRead'])
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            color: primary,
-                            shape: BoxShape.circle,
-                          ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
                         ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(statusIcon, size: 12, color: statusColor),
+                            const SizedBox(width: 4),
+                            TextWidget(
+                              text: statusText,
+                              fontSize: 10,
+                              fontFamily: 'Bold',
+                              color: statusColor,
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 5),
                   TextWidget(
-                    text: notification['message'],
+                    text: alert.details,
                     fontSize: 14,
                     fontFamily: 'Regular',
                     color: Colors.grey[700],
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 5),
+                  TextWidget(
+                    text: alert.location,
+                    fontSize: 13,
+                    fontFamily: 'Medium',
+                    color: Colors.grey[600],
                   ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Icon(Icons.access_time, size: 14, color: Colors.grey[500]),
+                      Icon(Icons.access_time,
+                          size: 14, color: Colors.grey[500]),
                       const SizedBox(width: 5),
                       TextWidget(
-                        text: notification['time'],
+                        text: _formatDateTime(alert.dateTime),
                         fontSize: 12,
                         fontFamily: 'Regular',
                         color: Colors.grey[500],

@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:safelink/models/alert_model.dart';
+import 'package:safelink/services/alert_service.dart';
 import 'package:safelink/utils/colors.dart';
 import 'package:safelink/widgets/text_widget.dart';
 
 class MapViewScreen extends StatefulWidget {
-  final bool isSinglePin;
-  final Map<String, dynamic>? alertData;
+  final AlertModel? singleAlert;
 
   const MapViewScreen({
     super.key,
-    this.isSinglePin = false,
-    this.alertData,
+    this.singleAlert,
   });
 
   @override
@@ -20,59 +20,101 @@ class MapViewScreen extends StatefulWidget {
 
 class _MapViewScreenState extends State<MapViewScreen> {
   final MapController _mapController = MapController();
-  Map<String, dynamic>? _selectedPin;
+  final AlertService _alertService = AlertService();
+  String? _selectedPin; // Alert ID
+  List<AlertModel> _alerts = [];
+  bool _isLoading = true;
 
-  // Sample multiple alert locations
-  final List<Map<String, dynamic>> _alertLocations = [
-    {
-      'id': 1,
-      'type': 'emergency',
-      'location': 'Block A, Street 5',
-      'coordinates': const LatLng(14.5995, 120.9842), // Manila coordinates
-      'time': '2025-10-10 14:30:00',
-      'status': 'resolved',
-      'description': 'Vehicle accident detected',
-    },
-    {
-      'id': 2,
-      'type': 'warning',
-      'location': 'Block B, Street 2',
-      'coordinates': const LatLng(14.6010, 120.9850),
-      'time': '2025-10-10 09:15:00',
-      'status': 'resolved',
-      'description': 'Potential incident detected',
-    },
-    {
-      'id': 3,
-      'type': 'emergency',
-      'location': 'Block C, Street 8',
-      'coordinates': const LatLng(14.5980, 120.9860),
-      'time': '2025-10-09 18:45:00',
-      'status': 'resolved',
-      'description': 'Emergency situation reported',
-    },
-    {
-      'id': 4,
-      'type': 'warning',
-      'location': 'Block D, Street 3',
-      'coordinates': const LatLng(14.6005, 120.9835),
-      'time': '2025-10-09 12:20:00',
-      'status': 'resolved',
-      'description': 'Minor incident detected',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadAlerts();
+  }
+
+  Future<void> _loadAlerts() async {
+    if (widget.singleAlert != null) {
+      // Single alert mode
+      setState(() {
+        _alerts = [widget.singleAlert!];
+        _isLoading = false;
+      });
+    } else {
+      // Load all alerts from Firebase
+      _alertService.getAllAlertsStream().listen((alerts) {
+        if (mounted) {
+          setState(() {
+            _alerts = alerts;
+            _isLoading = false;
+          });
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Use single alert data if provided, otherwise use sample data
-    final singleAlert = widget.alertData ??
-        {
-          'type': 'emergency',
-          'location': 'Block A, Street 5, Alsea Homes',
-          'coordinates': const LatLng(14.5995, 120.9842),
-          'time': DateTime.now().toString().substring(0, 19),
-          'description': 'Emergency alert detected',
-        };
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: primaryLight,
+        appBar: AppBar(
+          backgroundColor: primary,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: TextWidget(
+            text: 'Alert Locations',
+            fontSize: 20,
+            fontFamily: 'Bold',
+            color: Colors.white,
+          ),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(color: primary),
+        ),
+      );
+    }
+
+    if (_alerts.isEmpty) {
+      return Scaffold(
+        backgroundColor: primaryLight,
+        appBar: AppBar(
+          backgroundColor: primary,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: TextWidget(
+            text: 'Alert Locations',
+            fontSize: 20,
+            fontFamily: 'Bold',
+            color: Colors.white,
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.location_off, size: 80, color: Colors.grey[400]),
+              const SizedBox(height: 20),
+              TextWidget(
+                text: 'No alerts available',
+                fontSize: 18,
+                fontFamily: 'Medium',
+                color: Colors.grey[600],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final isSingleAlert = widget.singleAlert != null;
+    final displayAlerts = isSingleAlert ? [widget.singleAlert!] : _alerts;
+    final centerLat = displayAlerts.first.latitude;
+    final centerLng = displayAlerts.first.longitude;
 
     return Scaffold(
       backgroundColor: primaryLight,
@@ -84,17 +126,17 @@ class _MapViewScreenState extends State<MapViewScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: TextWidget(
-          text: widget.isSinglePin ? 'Alert Location' : 'All Alert Locations',
+          text: isSingleAlert ? 'Alert Location' : 'All Alert Locations',
           fontSize: 20,
           fontFamily: 'Bold',
           color: Colors.white,
         ),
         actions: [
-          if (!widget.isSinglePin)
+          if (!isSingleAlert)
             IconButton(
               icon: const Icon(Icons.my_location, color: Colors.white),
               onPressed: () {
-                _mapController.move(const LatLng(14.5995, 120.9842), 14.0);
+                _mapController.move(LatLng(centerLat, centerLng), 14.0);
               },
               tooltip: 'Center Map',
             ),
@@ -106,12 +148,10 @@ class _MapViewScreenState extends State<MapViewScreen> {
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              initialCenter: widget.isSinglePin
-                  ? singleAlert['coordinates']
-                  : const LatLng(14.5995, 120.9842),
-              initialZoom: widget.isSinglePin ? 16.0 : 14.0,
+              initialCenter: LatLng(centerLat, centerLng),
+              initialZoom: isSingleAlert ? 16.0 : 14.0,
               onTap: (_, __) {
-                if (!widget.isSinglePin) {
+                if (!isSingleAlert) {
                   setState(() {
                     _selectedPin = null;
                   });
@@ -124,33 +164,31 @@ class _MapViewScreenState extends State<MapViewScreen> {
                 userAgentPackageName: 'com.safelink.app',
               ),
               MarkerLayer(
-                markers: widget.isSinglePin
-                    ? [_buildSingleMarker(singleAlert)]
-                    : _buildMultipleMarkers(),
+                markers: displayAlerts.map((alert) => _buildMarker(alert)).toList(),
               ),
             ],
           ),
 
-          // Single Pin Info Card (always visible for single pin)
-          if (widget.isSinglePin)
+          // Single Alert Info Card
+          if (isSingleAlert)
             Positioned(
               bottom: 20,
               left: 20,
               right: 20,
-              child: _buildAlertInfoCard(singleAlert),
+              child: _buildAlertInfoCard(widget.singleAlert!),
             ),
 
-          // Multiple Pins Info Card (visible when pin is selected)
-          if (!widget.isSinglePin && _selectedPin != null)
+          // Multiple Alerts Info Card (when pin selected)
+          if (!isSingleAlert && _selectedPin != null)
             Positioned(
               bottom: 20,
               left: 20,
               right: 20,
-              child: _buildAlertInfoCard(_selectedPin!),
+              child: _buildSelectedPinCard(),
             ),
 
-          // Legend for multiple pins
-          if (!widget.isSinglePin)
+          // Legend for multiple alerts
+          if (!isSingleAlert)
             Positioned(
               top: 20,
               right: 20,
@@ -161,24 +199,35 @@ class _MapViewScreenState extends State<MapViewScreen> {
     );
   }
 
-  Marker _buildSingleMarker(Map<String, dynamic> alert) {
-    final isEmergency = alert['type'] == 'emergency';
+  Marker _buildMarker(AlertModel alert) {
+    final isEmergency = alert.alertType.toLowerCase() == 'emergency';
+    final isSelected = _selectedPin == alert.id;
+    final isSingleAlert = widget.singleAlert != null;
+
     return Marker(
-      point: alert['coordinates'],
-      width: 50,
-      height: 50,
+      point: LatLng(alert.latitude, alert.longitude),
+      width: isSelected ? 60 : 50,
+      height: isSelected ? 60 : 50,
       child: GestureDetector(
         onTap: () {
-          // Already showing info card for single pin
+          if (!isSingleAlert) {
+            setState(() {
+              _selectedPin = alert.id;
+            });
+            _mapController.move(LatLng(alert.latitude, alert.longitude), 16.0);
+          }
         },
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: EdgeInsets.all(isSelected ? 10 : 8),
               decoration: BoxDecoration(
                 color: isEmergency ? Colors.red : Colors.orange,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
+                border: Border.all(
+                  color: isSelected ? Colors.yellow : Colors.white,
+                  width: isSelected ? 4 : 3,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.3),
@@ -190,7 +239,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
               child: Icon(
                 isEmergency ? Icons.emergency : Icons.warning_amber,
                 color: Colors.white,
-                size: 24,
+                size: isSelected ? 28 : 24,
               ),
             ),
           ],
@@ -199,57 +248,16 @@ class _MapViewScreenState extends State<MapViewScreen> {
     );
   }
 
-  List<Marker> _buildMultipleMarkers() {
-    return _alertLocations.map((alert) {
-      final isEmergency = alert['type'] == 'emergency';
-      final isSelected = _selectedPin?['id'] == alert['id'];
-
-      return Marker(
-        point: alert['coordinates'],
-        width: isSelected ? 60 : 50,
-        height: isSelected ? 60 : 50,
-        child: GestureDetector(
-          onTap: () {
-            setState(() {
-              _selectedPin = alert;
-            });
-            _mapController.move(alert['coordinates'], 16.0);
-          },
-          child: Column(
-            children: [
-              Container(
-                padding: EdgeInsets.all(isSelected ? 10 : 8),
-                decoration: BoxDecoration(
-                  color: isEmergency ? Colors.red : Colors.orange,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isSelected ? Colors.yellow : Colors.white,
-                    width: isSelected ? 4 : 3,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 6,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  isEmergency ? Icons.emergency : Icons.warning_amber,
-                  color: Colors.white,
-                  size: isSelected ? 28 : 24,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }).toList();
+  Widget _buildSelectedPinCard() {
+    final selectedAlert = _alerts.firstWhere((alert) => alert.id == _selectedPin);
+    return _buildAlertInfoCard(selectedAlert);
   }
 
-  Widget _buildAlertInfoCard(Map<String, dynamic> alert) {
-    final isEmergency = alert['type'] == 'emergency';
+  Widget _buildAlertInfoCard(AlertModel alert) {
+    final isEmergency = alert.alertType.toLowerCase() == 'emergency';
     final color = isEmergency ? Colors.red : Colors.orange;
+    final statusColor = alert.isActive ? Colors.green : Colors.grey;
+    final statusText = alert.isActive ? 'Active' : 'Resolved';
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -296,7 +304,7 @@ class _MapViewScreenState extends State<MapViewScreen> {
                     ),
                     const SizedBox(height: 3),
                     TextWidget(
-                      text: alert['location'],
+                      text: alert.location,
                       fontSize: 14,
                       fontFamily: 'Regular',
                       color: Colors.grey[700],
@@ -309,51 +317,50 @@ class _MapViewScreenState extends State<MapViewScreen> {
           const SizedBox(height: 15),
           const Divider(),
           const SizedBox(height: 10),
-          _buildInfoRow(Icons.access_time, 'Time', alert['time']),
+          _buildInfoRow(Icons.access_time, 'Time', _formatDateTime(alert.dateTime)),
           const SizedBox(height: 8),
-          if (alert['description'] != null)
-            _buildInfoRow(Icons.info_outline, 'Details', alert['description']),
-          if (alert['status'] != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.check_circle, size: 18, color: Colors.green),
-                const SizedBox(width: 8),
-                TextWidget(
-                  text: 'Status: ',
-                  fontSize: 14,
-                  fontFamily: 'Bold',
-                  color: Colors.grey[700],
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: TextWidget(
-                    text: alert['status'].toUpperCase(),
-                    fontSize: 12,
-                    fontFamily: 'Bold',
-                    color: Colors.green,
-                  ),
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 15),
+          _buildInfoRow(Icons.info_outline, 'Details', alert.details),
+          const SizedBox(height: 8),
           Row(
             children: [
-              if (!widget.isSinglePin) ...[
+              Icon(
+                alert.isActive ? Icons.warning : Icons.check_circle,
+                size: 18,
+                color: statusColor,
+              ),
+              const SizedBox(width: 8),
+              TextWidget(
+                text: 'Status: ',
+                fontSize: 14,
+                fontFamily: 'Bold',
+                color: Colors.grey[700],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: TextWidget(
+                  text: statusText.toUpperCase(),
+                  fontSize: 12,
+                  fontFamily: 'Bold',
+                  color: statusColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          if (widget.singleAlert == null)
+            Row(
+              children: [
                 Expanded(
-                  child: ElevatedButton.icon(
+                  child: ElevatedButton(
                     onPressed: () {
                       setState(() {
                         _selectedPin = null;
                       });
                     },
-                    label: const Text('Close'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primary,
                       foregroundColor: Colors.white,
@@ -362,14 +369,18 @@ class _MapViewScreenState extends State<MapViewScreen> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
+                    child: const Text('Close'),
                   ),
                 ),
               ],
-            ],
-          ),
+            ),
         ],
       ),
     );
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 
   Widget _buildInfoRow(IconData icon, String label, String value) {

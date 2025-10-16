@@ -1,5 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:safelink/models/alert_model.dart';
 import 'package:safelink/screens/auth/login_screen.dart';
 import 'package:safelink/screens/dashboard/about_screen.dart';
 import 'package:safelink/screens/dashboard/emergency_contacts_screen.dart';
@@ -7,6 +8,7 @@ import 'package:safelink/screens/dashboard/history_screen.dart';
 import 'package:safelink/screens/dashboard/map_view_screen.dart';
 import 'package:safelink/screens/dashboard/notifications_screen.dart';
 import 'package:safelink/screens/dashboard/settings_screen.dart';
+import 'package:safelink/services/alert_service.dart';
 import 'package:safelink/utils/colors.dart';
 import 'package:safelink/widgets/text_widget.dart';
 
@@ -18,43 +20,58 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  final AlertService _alertService = AlertService();
+  StreamSubscription<List<AlertModel>>? _alertSubscription;
+
+  AlertModel? _currentAlert;
   bool _hasIncomingAlert = false;
   String _alertType = 'none'; // 'emergency', 'warning', 'none'
   String _lastAlertTime = 'No alerts yet';
   String _lastAlertLocation = 'N/A';
-
-  // Simulation toggle
-  bool _simulationMode = false;
-
-  // Simulate checking for incoming alerts
-  void _checkForAlerts() {
-    // TODO: Implement Firebase Cloud Messaging listener
-    // This will be replaced with actual FCM implementation
-  }
-
-  void _toggleSimulation(bool value) {
-    setState(() {
-      _simulationMode = value;
-      if (_simulationMode) {
-        // Simulate an emergency alert
-        _hasIncomingAlert = true;
-        _alertType = 'emergency';
-        _lastAlertTime = DateTime.now().toString().substring(0, 19);
-        _lastAlertLocation = 'Block A, Street 5, Alsea Homes';
-      } else {
-        // Clear alerts
-        _hasIncomingAlert = false;
-        _alertType = 'none';
-        _lastAlertTime = 'No alerts yet';
-        _lastAlertLocation = 'N/A';
-      }
-    });
-  }
+  String? _currentAlertId;
 
   @override
   void initState() {
     super.initState();
-    _checkForAlerts();
+    _listenToAlerts();
+  }
+
+  @override
+  void dispose() {
+    _alertSubscription?.cancel();
+    super.dispose();
+  }
+
+  // Listen to Firebase Realtime Database for active alerts
+  void _listenToAlerts() {
+    _alertSubscription = _alertService.getActiveAlertsStream().listen((alerts) {
+      if (alerts.isNotEmpty) {
+        // Get the most recent active alert
+        final latestAlert = alerts.first;
+
+        setState(() {
+          _currentAlert = latestAlert;
+          _currentAlertId = latestAlert.id;
+          _hasIncomingAlert = true;
+          _alertType = latestAlert.alertType.toLowerCase();
+          _lastAlertTime = _formatDateTime(latestAlert.dateTime);
+          _lastAlertLocation = latestAlert.location;
+        });
+      } else {
+        setState(() {
+          _currentAlert = null;
+          _currentAlertId = null;
+          _hasIncomingAlert = false;
+          _alertType = 'none';
+          _lastAlertTime = 'No alerts yet';
+          _lastAlertLocation = 'N/A';
+        });
+      }
+    });
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:${dateTime.second.toString().padLeft(2, '0')}';
   }
 
   void _navigateToHistory() {
@@ -92,34 +109,171 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _viewMapLocation() {
-    // Navigate to map view with single alert location
+  void _navigateToMapView() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => MapViewScreen(
-          isSinglePin: true,
-          alertData: {
-            'type': _alertType,
-            'location': _lastAlertLocation,
-            'coordinates': const LatLng(14.5995, 120.9842),
-            'time': _lastAlertTime,
-            'description': _alertType == 'emergency'
-                ? 'Emergency alert detected'
-                : 'Warning alert detected',
-          },
+          singleAlert: _currentAlert,
         ),
       ),
     );
   }
 
   void _acknowledgeAlert() {
-    setState(() {
-      _hasIncomingAlert = false;
-      _alertType = 'none';
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Alert acknowledged and cleared')),
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(15),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Clear Alert',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to clear this alert?',
+              style: TextStyle(
+                fontSize: 15,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        _alertType == 'emergency'
+                            ? Icons.emergency
+                            : Icons.warning,
+                        size: 16,
+                        color: _alertType == 'emergency'
+                            ? Colors.red
+                            : Colors.orange,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _alertType == 'emergency'
+                            ? 'Emergency Alert'
+                            : 'Warning Alert',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _lastAlertLocation,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _lastAlertTime,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'This action will mark the alert as resolved.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (_currentAlertId != null) {
+                // Clear alert in Firebase
+                await _alertService.clearAlert(_currentAlertId!);
+              }
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Alert acknowledged and cleared'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Clear Alert',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -233,9 +387,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       drawer: _buildDrawer(),
+      // floatingActionButton: FloatingActionButton.extended(
+      //   onPressed: () async {
+      //     // Add sample alerts to Firebase
+      //     await _alertService.addSampleAlerts();
+      //     if (mounted) {
+      //       ScaffoldMessenger.of(context).showSnackBar(
+      //         const SnackBar(
+      //           content: Text('Sample alerts added to Firebase!'),
+      //           backgroundColor: Colors.green,
+      //           duration: Duration(seconds: 2),
+      //         ),
+      //       );
+      //     }
+      //   },
+      //   backgroundColor: primary,
+      //   icon: const Icon(Icons.add_alert),
+      //   label: const Text('Add Sample Data'),
+      // ),
       body: RefreshIndicator(
         onRefresh: () async {
-          _checkForAlerts();
+          // Refresh is handled automatically by the stream
           await Future.delayed(const Duration(seconds: 1));
         },
         child: SingleChildScrollView(
@@ -247,10 +419,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 // Welcome Section
                 _buildWelcomeSection(),
-                const SizedBox(height: 20),
-
-                // Simulation Toggle
-                _buildSimulationToggle(),
                 const SizedBox(height: 20),
 
                 // Alert Status Card
@@ -273,7 +441,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 20),
 
                 // System Status
-                _buildSystemStatusCard(),
+                // _buildSystemStatusCard(),
               ],
             ),
           ),
@@ -455,73 +623,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildSimulationToggle() {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: _simulationMode ? primary : Colors.grey.withOpacity(0.3),
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: _simulationMode
-                  ? primary.withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.science_outlined,
-              color: _simulationMode ? primary : Colors.grey[600],
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextWidget(
-                  text: 'Simulation Mode',
-                  fontSize: 16,
-                  fontFamily: 'Bold',
-                  color: Colors.black,
-                ),
-                const SizedBox(height: 3),
-                TextWidget(
-                  text: _simulationMode
-                      ? 'Active Alert Simulation ON'
-                      : 'No Alerts Simulation',
-                  fontSize: 13,
-                  fontFamily: 'Regular',
-                  color: _simulationMode ? primary : Colors.grey[600],
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: _simulationMode,
-            activeColor: primary,
-            onChanged: _toggleSimulation,
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAlertStatusCard() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -588,7 +689,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _viewMapLocation,
+                    onPressed: _navigateToMapView,
                     icon: const Icon(
                       Icons.map,
                       color: Colors.white,
@@ -661,9 +762,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => const MapViewScreen(
-                  isSinglePin: false,
-                ),
+                builder: (context) => const MapViewScreen(),
               ),
             );
           },
