@@ -11,6 +11,8 @@ import 'package:safelink/screens/dashboard/settings_screen.dart';
 import 'package:safelink/services/alert_service.dart';
 import 'package:safelink/utils/colors.dart';
 import 'package:safelink/widgets/text_widget.dart';
+import 'package:vibration/vibration.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -21,7 +23,9 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final AlertService _alertService = AlertService();
+  final AudioPlayer _audioPlayer = AudioPlayer();
   StreamSubscription<List<AlertModel>>? _alertSubscription;
+  Timer? _vibrationTimer;
 
   AlertModel? _currentAlert;
   bool _hasIncomingAlert = false;
@@ -29,17 +33,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _lastAlertTime = 'No alerts yet';
   String _lastAlertLocation = 'N/A';
   String? _currentAlertId;
+  bool _isVibrating = false;
+  bool _isPlayingSound = false;
 
   @override
   void initState() {
     super.initState();
     _listenToAlerts();
+    _configureAudioPlayer();
   }
 
   @override
   void dispose() {
     _alertSubscription?.cancel();
+    _stopVibration();
+    _stopSound();
+    _audioPlayer.dispose();
     super.dispose();
+  }
+
+  void _configureAudioPlayer() {
+    // Set audio to loop
+    _audioPlayer.setReleaseMode(ReleaseMode.loop);
   }
 
   // Listen to Firebase Realtime Database for active alerts
@@ -57,6 +72,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _lastAlertTime = _formatDateTime(latestAlert.dateTime);
           _lastAlertLocation = latestAlert.location;
         });
+
+        // Start vibration and sound for active alert
+        _startVibration();
+        _startSound();
       } else {
         setState(() {
           _currentAlert = null;
@@ -66,8 +85,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _lastAlertTime = 'No alerts yet';
           _lastAlertLocation = 'N/A';
         });
+
+        // Stop vibration and sound when no active alerts
+        _stopVibration();
+        _stopSound();
       }
     });
+  }
+
+  // Start continuous vibration
+  Future<void> _startVibration() async {
+    if (_isVibrating) return; // Already vibrating
+
+    // Check if device has vibration capability
+    final hasVibrator = await Vibration.hasVibrator();
+    if (hasVibrator != true) return;
+
+    _isVibrating = true;
+
+    // Vibrate in a pattern: vibrate for 1 second, pause for 1 second, repeat
+    _vibrationTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+      if (_isVibrating) {
+        await Vibration.vibrate(duration: 1000); // Vibrate for 1 second
+      }
+    });
+
+    // Initial vibration
+    await Vibration.vibrate(duration: 1000);
+  }
+
+  // Stop vibration
+  void _stopVibration() {
+    if (!_isVibrating) return;
+
+    _isVibrating = false;
+    _vibrationTimer?.cancel();
+    _vibrationTimer = null;
+    Vibration.cancel();
+  }
+
+  // Start alert sound
+  Future<void> _startSound() async {
+    if (_isPlayingSound) return; // Already playing
+
+    try {
+      _isPlayingSound = true;
+      // Play sound from assets folder - adjust the filename to match your asset
+      await _audioPlayer.play(AssetSource('alarm.mp3'));
+    } catch (e) {
+      print('Error playing sound: $e');
+      _isPlayingSound = false;
+    }
+  }
+
+  // Stop alert sound
+  Future<void> _stopSound() async {
+    if (!_isPlayingSound) return;
+
+    try {
+      await _audioPlayer.stop();
+      _isPlayingSound = false;
+    } catch (e) {
+      print('Error stopping sound: $e');
+    }
   }
 
   String _formatDateTime(DateTime dateTime) {
